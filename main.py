@@ -5,9 +5,15 @@ import hashlib
 import hmac
 
 # recuperation des cles api sur le serveur à ne pas mettre ici 
+
+#Binance API
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
 BINANCE_SECRET_KEY = os.getenv("BINANCE_SECRET_KEY")
 
+#Rise API
+
+
+#Telegram API
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -38,7 +44,7 @@ def send_telegram(message):
 
     requests.post(url, data=data)
 
-
+initialized = False
 while True:
     try:
         timestamp = int(time.time() * 1000)
@@ -74,7 +80,11 @@ while True:
 
             last_txid = get_last_txid()
 
-            if txid != last_txid:
+            if not initialized:
+                save_last_txid(txid)
+                initialized = True
+
+            elif txid != last_txid:
 
                 message = (
                     f"💸 Dépôt Binance reçu\n"
