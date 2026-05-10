@@ -1,4 +1,4 @@
-# binance-paiement-telegram-bot
+# celluletrade_cash_bot
 
 
 # 📡 Binance & Rise Telegram Monitoring Bot
