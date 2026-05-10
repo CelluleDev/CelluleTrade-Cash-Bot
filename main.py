@@ -11,6 +11,9 @@ import asyncio
 import json
 import websockets
 
+from flask import Flask
+from threading import Thread
+
 from web3 import Web3
 
 
@@ -333,6 +336,33 @@ async def main():
 
         listen_rise_wallet()
     )
+
+
+# =========================================================
+# FLASK KEEP ALIVE RENDER
+# =========================================================
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "CelluleTrade Bot Running"
+
+
+def run_flask():
+
+    app.run(
+        host="0.0.0.0",
+        port=10000
+    )
+
+
+# lancement flask dans un thread séparé
+
+Thread(
+    target=run_flask,
+    daemon=True
+).start()
 
 
 # =========================================================
