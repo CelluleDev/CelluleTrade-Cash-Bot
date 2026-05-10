@@ -11,7 +11,22 @@ BINANCE_SECRET_KEY = os.getenv("BINANCE_SECRET_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-last_txid = None
+
+# plus de doublons, même après redémarrage du systeme
+LAST_TX_FILE = "last_txid.txt"
+
+
+def get_last_txid():
+    if os.path.exists(LAST_TX_FILE):
+        with open(LAST_TX_FILE, "r") as f:
+            return f.read().strip()
+    return None
+
+
+def save_last_txid(txid):
+    with open(LAST_TX_FILE, "w") as f:
+        f.write(txid)
+
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -22,6 +37,7 @@ def send_telegram(message):
     }
 
     requests.post(url, data=data)
+
 
 while True:
     try:
@@ -56,18 +72,22 @@ while True:
             amount = latest.get("amount")
             network = latest.get("network")
 
+            last_txid = get_last_txid()
 
             if txid != last_txid:
-                last_txid = txid
 
                 message = (
-                    f"💰 Nouveau dépôt Binance\n\n"
-                    f"Crypto : {coin}\n"
-                    f"Montant : {amount}\n"
-                    f"Réseau : {network}"
+                    f"💸 Dépôt Binance reçu\n"
+                    f"━━━━━━━━━━━━━━━\n"
+                    f"💰 Montant : {amount}\n\n"
+                    f"🪙 Crypto : {coin}\n"
+                    f"🌐 Réseau : {network}\n\n"
+                    f"📥 Fonds crédités sur Binance\n"
                 )
 
                 send_telegram(message)
+
+                save_last_txid(txid)
 
         time.sleep(60)
 
