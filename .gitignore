@@ -1,0 +1,15 @@
+# ignore ces fichiers, ne les envoie pas sur GitHub
+# .env contient des clés privées
+# __pycache__/ fichiers Python inutiles
+# *.pyc cache Python
+# last_txid.txt historique anti doublons
+# last_rise_txid.txt historique websocket
+
+# Git peut envoyer :/ tes clés API Binance/ ton token Telegram / ton .env/ des fichiers temporaires / des logs
+
+
+.env
+__pycache__/
+*.pyc
+last_txid.txt
+last_rise_txid.txt
