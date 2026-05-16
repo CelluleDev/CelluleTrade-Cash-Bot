@@ -119,18 +119,22 @@ def send_telegram(message):
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
-    data = {
+    
+    payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": message
+        "text": message,
+        "parse_mode": "HTML"
     }
 
     try:
 
         response = requests.post(
             url,
-            data=data,
+            json=payload,
             timeout=10
         )
+
+        
 
         print("✅ Telegram envoyé")
         print(response.text)
@@ -156,7 +160,8 @@ async def binance_loop():
 
             timestamp = int(time.time() * 1000)
 
-            query_string = f"timestamp={timestamp}"
+            
+            query_string = f"timestamp={timestamp}&recvWindow=60000"
 
             signature = hmac.new(
                 BINANCE_SECRET_KEY.encode(),
@@ -168,6 +173,7 @@ async def binance_loop():
                 "https://api.binance.com/sapi/v1/capital/deposit/hisrec"
                 f"?{query_string}&signature={signature}"
             )
+            
 
             headers = {
                 "X-MBX-APIKEY": BINANCE_API_KEY
