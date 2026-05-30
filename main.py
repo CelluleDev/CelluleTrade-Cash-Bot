@@ -36,9 +36,9 @@ BINANCE_API_BASE_URL = os.getenv(
     "BINANCE_API_BASE_URL",
     "https://api.binance.com"
 )
-BINANCE_WS_BASE_URL = os.getenv(
-    "BINANCE_WS_BASE_URL",
-    "wss://stream.binance.com:9443/ws"
+BINANCE_WS_API_URL = os.getenv(
+    "BINANCE_WS_API_URL",
+    "wss://ws-api.binance.com:443/ws-api/v3?returnRateLimits=false"
 )
 BINANCE_FALLBACK_INTERVAL = int(
     os.getenv("BINANCE_FALLBACK_INTERVAL", "900")
@@ -340,60 +340,47 @@ def process_binance_deposits(baseline_if_empty=False):
     return False
 
 
-def create_binance_listen_key():
+def sign_binance_ws_params(params):
 
-    print("🔑 Binance création listenKey...", flush=True)
+    query_string = urlencode(sorted(params.items()))
 
-    response = requests.post(
-        f"{BINANCE_API_BASE_URL}/api/v3/userDataStream",
-        headers=get_binance_headers(),
-        timeout=10
-    )
+    signature = hmac.new(
+        BINANCE_SECRET_KEY.encode(),
+        query_string.encode(),
+        hashlib.sha256
+    ).hexdigest()
 
-    response.raise_for_status()
+    signed_params = dict(params)
 
-    result = response.json()
+    signed_params["signature"] = signature
 
-    listen_key = result.get("listenKey")
-
-    if not listen_key:
-
-        raise RuntimeError(f"listenKey Binance manquant : {result}")
-
-    print("✅ Binance listenKey créée", flush=True)
-
-    return listen_key
+    return signed_params
 
 
-def keepalive_binance_listen_key(listen_key):
+async def subscribe_binance_user_stream(ws):
 
-    response = requests.put(
-        f"{BINANCE_API_BASE_URL}/api/v3/userDataStream",
-        headers=get_binance_headers(),
-        params={"listenKey": listen_key},
-        timeout=10
-    )
+    print("🔑 Binance subscription signature...", flush=True)
 
-    response.raise_for_status()
+    params = sign_binance_ws_params({
+        "apiKey": BINANCE_API_KEY,
+        "timestamp": int(time.time() * 1000)
+    })
 
+    request = {
+        "id": int(time.time() * 1000),
+        "method": "userDataStream.subscribe.signature",
+        "params": params
+    }
 
-async def keepalive_binance_loop(listen_key):
+    await ws.send(json.dumps(request))
 
-    while True:
+    response = json.loads(await ws.recv())
 
-        await asyncio.sleep(30 * 60)
+    if response.get("status") != 200:
 
-        try:
-            await asyncio.to_thread(
-                keepalive_binance_listen_key,
-                listen_key
-            )
+        raise RuntimeError(f"Binance subscription refusée : {response}")
 
-            print("✅ Binance listenKey keepalive")
-        except Exception as e:
-            print("❌ Binance listenKey keepalive error :", e)
-
-            raise
+    print("✅ Listening Binance User Data Stream", flush=True)
 
 
 def is_positive_binance_balance_update(data):
@@ -442,22 +429,10 @@ async def listen_binance_wallet():
 
     while True:
 
-        keepalive_task = None
-
         try:
-            listen_key = await asyncio.to_thread(
-                create_binance_listen_key
-            )
+            async with websockets.connect(BINANCE_WS_API_URL) as ws:
 
-            keepalive_task = asyncio.create_task(
-                keepalive_binance_loop(listen_key)
-            )
-
-            websocket_url = f"{BINANCE_WS_BASE_URL}/{listen_key}"
-
-            async with websockets.connect(websocket_url) as ws:
-
-                print("✅ Listening Binance User Data Stream")
+                await subscribe_binance_user_stream(ws)
 
                 while True:
 
@@ -476,17 +451,6 @@ async def listen_binance_wallet():
             print("❌ Binance websocket error :", e)
 
             await asyncio.sleep(10)
-
-        finally:
-
-            if keepalive_task:
-
-                keepalive_task.cancel()
-
-                try:
-                    await keepalive_task
-                except asyncio.CancelledError:
-                    pass
 
 
 async def binance_fallback_loop():
