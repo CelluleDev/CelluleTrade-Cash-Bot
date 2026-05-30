@@ -6,8 +6,8 @@ Bot Python de monitoring crypto en temps réel.
 
 Le script surveille automatiquement :
 
-- les dépôts Binance
-- les transactions blockchain Rise sur Arbitrum
+- les dépôts Binance (pour recevoir les notifications de paiement de votre broker vers Binance quand vous faites un retrait)
+- les transactions blockchain Rise sur Arbitrum (pour les retraits des prop firms et être alerté quand vous recevez le paiement sur Rise)
 
 et envoie des notifications Telegram instantanées.
 
