@@ -28,11 +28,15 @@ Le bot fonctionne avec trois blocs principaux :
 
 ### Binance
 
-Binance est surveillé via le User Data Stream WebSocket.
+Binance est surveillé via le User Data Stream WebSocket signé.
 
 Au démarrage, le bot lit une fois l'historique des dépôts Binance pour créer une baseline avec le dernier `txId`.
 
-Ensuite, il ouvre un WebSocket Binance et écoute les événements `balanceUpdate`.
+Ensuite, il ouvre un WebSocket Binance sur `wss://ws-api.binance.com:443/ws-api/v3` et s'abonne avec `userDataStream.subscribe.signature`.
+
+Cette méthode remplace l'ancien système Binance `listenKey`, qui peut retourner une erreur `410 Gone` sur Render.
+
+Le bot écoute ensuite les événements `balanceUpdate`.
 
 Quand Binance signale une augmentation de solde, le bot appelle l'API deposit history uniquement à ce moment-là pour récupérer les détails du dépôt :
 
@@ -44,6 +48,18 @@ Quand Binance signale une augmentation de solde, le bot appelle l'API deposit hi
 Si le `txId` est nouveau, une notification Telegram est envoyée, puis le `txId` est sauvegardé dans `last_txid.txt`.
 
 Un fallback REST tourne aussi toutes les 15 minutes par défaut, pour sécuriser le bot si le WebSocket coupe ou rate un événement.
+
+Logs attendus au démarrage :
+
+```text
+✅ Binance websocket monitoring démarré
+🔎 Binance REST deposit history check...
+✅ Binance deposits checked
+✅ Binance baseline enregistrée
+✅ Binance fallback REST toutes les 900s
+🔑 Binance subscription signature...
+✅ Listening Binance User Data Stream
+```
 
 ### Rise / Arbitrum
 
@@ -97,4 +113,5 @@ Variable optionnelle :
 
 ```env
 BINANCE_FALLBACK_INTERVAL=900
+BINANCE_WS_API_URL=wss://ws-api.binance.com:443/ws-api/v3?returnRateLimits=false
 ```
