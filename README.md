@@ -34,7 +34,7 @@ Au démarrage, le bot lit une fois l'historique des dépôts Binance pour créer
 
 Ensuite, il ouvre un WebSocket Binance sur `wss://ws-api.binance.com:443/ws-api/v3` et s'abonne avec `userDataStream.subscribe.signature`.
 
-Cette méthode remplace l'ancien système Binance `listenKey`, qui peut retourner une erreur `410 Gone` sur Render.
+Cette méthode remplace l'ancien système Binance `listenKey`, qui peut retourner une erreur `410 Gone` sur les versions récentes de l'API Binance.
 
 Le bot écoute ensuite les événements `balanceUpdate`.
 
@@ -85,11 +85,11 @@ Une transaction est marquée comme traitée seulement si Telegram confirme que l
 
 Cela évite de perdre une notification si Telegram refuse ou si le réseau échoue.
 
-### Render
+### Serveur / hébergement
 
 Le bot lance aussi un petit serveur Flask sur le port `10000`.
 
-Ce serveur sert de keep-alive pour Render et permet de vérifier que le service tourne.
+Ce serveur sert de endpoint de santé pour vérifier que le service tourne, quel que soit l'hébergeur utilisé.
 
 ### Variables d'environnement
 
