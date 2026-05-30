@@ -247,6 +247,8 @@ def sign_binance_params(params):
 
 def get_binance_deposits():
 
+    print("🔎 Binance REST deposit history check...", flush=True)
+
     params = {
         "timestamp": int(time.time() * 1000),
         "recvWindow": 60000
@@ -340,6 +342,8 @@ def process_binance_deposits(baseline_if_empty=False):
 
 def create_binance_listen_key():
 
+    print("🔑 Binance création listenKey...", flush=True)
+
     response = requests.post(
         f"{BINANCE_API_BASE_URL}/api/v3/userDataStream",
         headers=get_binance_headers(),
@@ -355,6 +359,8 @@ def create_binance_listen_key():
     if not listen_key:
 
         raise RuntimeError(f"listenKey Binance manquant : {result}")
+
+    print("✅ Binance listenKey créée", flush=True)
 
     return listen_key
 
@@ -378,7 +384,10 @@ async def keepalive_binance_loop(listen_key):
         await asyncio.sleep(30 * 60)
 
         try:
-            keepalive_binance_listen_key(listen_key)
+            await asyncio.to_thread(
+                keepalive_binance_listen_key,
+                listen_key
+            )
 
             print("✅ Binance listenKey keepalive")
         except Exception as e:
@@ -405,7 +414,12 @@ async def refresh_binance_deposit_after_event():
 
     for attempt in range(1, 4):
 
-        if process_binance_deposits(baseline_if_empty=False):
+        has_new_deposit = await asyncio.to_thread(
+            process_binance_deposits,
+            False
+        )
+
+        if has_new_deposit:
 
             return
 
@@ -419,7 +433,10 @@ async def listen_binance_wallet():
     print("✅ Binance websocket monitoring démarré")
 
     try:
-        process_binance_deposits(baseline_if_empty=True)
+        await asyncio.to_thread(
+            process_binance_deposits,
+            True
+        )
     except Exception as e:
         print("❌ Binance baseline error :", e)
 
@@ -428,7 +445,9 @@ async def listen_binance_wallet():
         keepalive_task = None
 
         try:
-            listen_key = create_binance_listen_key()
+            listen_key = await asyncio.to_thread(
+                create_binance_listen_key
+            )
 
             keepalive_task = asyncio.create_task(
                 keepalive_binance_loop(listen_key)
@@ -481,7 +500,10 @@ async def binance_fallback_loop():
         await asyncio.sleep(BINANCE_FALLBACK_INTERVAL)
 
         try:
-            process_binance_deposits(baseline_if_empty=True)
+            await asyncio.to_thread(
+                process_binance_deposits,
+                True
+            )
         except Exception as e:
             print("❌ Binance fallback error :", e)
 
