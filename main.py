@@ -11,8 +11,10 @@ import asyncio
 import json
 import websockets
 
+from decimal import Decimal
 from flask import Flask
 from threading import Thread
+from urllib.parse import urlencode
 
 from web3 import Web3
 
@@ -30,6 +32,17 @@ from web3 import Web3
 
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
 BINANCE_SECRET_KEY = os.getenv("BINANCE_SECRET_KEY")
+BINANCE_API_BASE_URL = os.getenv(
+    "BINANCE_API_BASE_URL",
+    "https://api.binance.com"
+)
+BINANCE_WS_BASE_URL = os.getenv(
+    "BINANCE_WS_BASE_URL",
+    "wss://stream.binance.com:9443/ws"
+)
+BINANCE_FALLBACK_INTERVAL = int(
+    os.getenv("BINANCE_FALLBACK_INTERVAL", "900")
+)
 
 
 # ---------------------------------------------------------
@@ -45,9 +58,7 @@ ALCHEMY_WS_URL = os.getenv("ALCHEMY_WS_URL")
 
 # mettre wallet dans .env du serveur 
 
-RISE_WALLET = Web3.to_checksum_address(
-    os.getenv("RISE_WALLET")
-)
+RISE_WALLET = os.getenv("RISE_WALLET")
 
 
 # ---------------------------------------------------------
@@ -56,6 +67,60 @@ RISE_WALLET = Web3.to_checksum_address(
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+
+REQUIRED_ENV_VARS = {
+    "BINANCE_API_KEY": BINANCE_API_KEY,
+    "BINANCE_SECRET_KEY": BINANCE_SECRET_KEY,
+    "TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+    "TELEGRAM_CHAT_ID": TELEGRAM_CHAT_ID,
+}
+
+RISE_ENV_VARS = {
+    "ALCHEMY_WS_URL": ALCHEMY_WS_URL,
+    "RISE_WALLET": RISE_WALLET,
+}
+
+
+def validate_environment():
+
+    global RISE_WALLET
+
+    missing_vars = [
+        name
+        for name, value in REQUIRED_ENV_VARS.items()
+        if not value
+    ]
+
+    if missing_vars:
+        raise RuntimeError(
+            "Variables d'environnement manquantes : "
+            + ", ".join(missing_vars)
+        )
+
+    missing_rise_vars = [
+        name
+        for name, value in RISE_ENV_VARS.items()
+        if not value
+    ]
+
+    if missing_rise_vars:
+
+        print(
+            "⚠️ Rise désactivé, variables manquantes : "
+            + ", ".join(missing_rise_vars)
+        )
+
+        return False
+
+    try:
+        RISE_WALLET = Web3.to_checksum_address(RISE_WALLET)
+    except (TypeError, ValueError) as e:
+        print("⚠️ Rise désactivé : RISE_WALLET invalide.")
+
+        return False
+
+    return True
 
 
 # =========================================================
@@ -134,106 +199,291 @@ def send_telegram(message):
             timeout=10
         )
 
-        
+        response.raise_for_status()
+
+        result = response.json()
+
+        if not result.get("ok"):
+
+            print("❌ Telegram refusé :", result)
+
+            return False
 
         print("✅ Telegram envoyé")
-        print(response.text)
+        print(result)
+
+        return True
 
     except Exception as e:
 
         print("❌ Telegram erreur :", e)
 
+        return False
+
 
 # =========================================================
-# BINANCE LOOP
+# BINANCE REST + WEBSOCKET
 # =========================================================
 
-async def binance_loop():
+def get_binance_headers():
 
-    initialized = False
+    return {
+        "X-MBX-APIKEY": BINANCE_API_KEY
+    }
 
-    print("✅ Binance monitoring démarré")
+
+def sign_binance_params(params):
+
+    query_string = urlencode(params)
+
+    signature = hmac.new(
+        BINANCE_SECRET_KEY.encode(),
+        query_string.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+    return f"{query_string}&signature={signature}"
+
+
+def get_binance_deposits():
+
+    params = {
+        "timestamp": int(time.time() * 1000),
+        "recvWindow": 60000
+    }
+
+    signed_query = sign_binance_params(params)
+
+    url = (
+        f"{BINANCE_API_BASE_URL}/sapi/v1/capital/deposit/hisrec"
+        f"?{signed_query}"
+    )
+
+    response = requests.get(
+        url,
+        headers=get_binance_headers(),
+        timeout=10
+    )
+
+    response.raise_for_status()
+
+    return response.json()
+
+
+def process_binance_deposits(baseline_if_empty=False):
+
+    deposits = get_binance_deposits()
+
+    print("✅ Binance deposits checked")
+
+    if not isinstance(deposits, list):
+
+        print("❌ Binance réponse inattendue :", deposits)
+
+        return False
+
+    if len(deposits) == 0:
+
+        print("✅ Aucun dépôt Binance")
+
+        return False
+
+    latest = max(
+        deposits,
+        key=lambda deposit: deposit.get("insertTime", 0)
+    )
+
+    txid = latest.get("txId")
+    coin = latest.get("coin")
+    amount = latest.get("amount")
+    network = latest.get("network")
+
+    if not txid:
+
+        print("⚠️ Binance deposit sans txId")
+
+        return False
+
+    last_txid = get_last_txid()
+
+    if last_txid is None and baseline_if_empty:
+
+        save_last_txid(txid)
+
+        print("✅ Binance baseline enregistrée")
+
+        return False
+
+    if txid == last_txid:
+
+        print("✅ Aucun nouveau dépôt Binance")
+
+        return False
+
+    message = (
+        f"💸 Dépôt Binance reçu\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"💰 Montant : {amount}\n\n"
+        f"🪙 Crypto : {coin}\n"
+        f"🌐 Réseau : {network}\n\n"
+        f"📥 Fonds crédités sur Binance\n"
+    )
+
+    if send_telegram(message):
+
+        save_last_txid(txid)
+
+        return True
+
+    return False
+
+
+def create_binance_listen_key():
+
+    response = requests.post(
+        f"{BINANCE_API_BASE_URL}/api/v3/userDataStream",
+        headers=get_binance_headers(),
+        timeout=10
+    )
+
+    response.raise_for_status()
+
+    result = response.json()
+
+    listen_key = result.get("listenKey")
+
+    if not listen_key:
+
+        raise RuntimeError(f"listenKey Binance manquant : {result}")
+
+    return listen_key
+
+
+def keepalive_binance_listen_key(listen_key):
+
+    response = requests.put(
+        f"{BINANCE_API_BASE_URL}/api/v3/userDataStream",
+        headers=get_binance_headers(),
+        params={"listenKey": listen_key},
+        timeout=10
+    )
+
+    response.raise_for_status()
+
+
+async def keepalive_binance_loop(listen_key):
 
     while True:
 
+        await asyncio.sleep(30 * 60)
+
         try:
+            keepalive_binance_listen_key(listen_key)
 
-            timestamp = int(time.time() * 1000)
+            print("✅ Binance listenKey keepalive")
+        except Exception as e:
+            print("❌ Binance listenKey keepalive error :", e)
 
-            
-            query_string = f"timestamp={timestamp}&recvWindow=60000"
+            raise
 
-            signature = hmac.new(
-                BINANCE_SECRET_KEY.encode(),
-                query_string.encode(),
-                hashlib.sha256
-            ).hexdigest()
 
-            url = (
-                "https://api.binance.com/sapi/v1/capital/deposit/hisrec"
-                f"?{query_string}&signature={signature}"
+def is_positive_binance_balance_update(data):
+
+    event = data.get("event", data)
+
+    if event.get("e") != "balanceUpdate":
+
+        return False
+
+    try:
+        return Decimal(event.get("d", "0")) > 0
+    except Exception:
+        return False
+
+
+async def refresh_binance_deposit_after_event():
+
+    for attempt in range(1, 4):
+
+        if process_binance_deposits(baseline_if_empty=False):
+
+            return
+
+        print(f"⏳ Binance dépôt pas encore visible, essai {attempt}/3")
+
+        await asyncio.sleep(10)
+
+
+async def listen_binance_wallet():
+
+    print("✅ Binance websocket monitoring démarré")
+
+    try:
+        process_binance_deposits(baseline_if_empty=True)
+    except Exception as e:
+        print("❌ Binance baseline error :", e)
+
+    while True:
+
+        keepalive_task = None
+
+        try:
+            listen_key = create_binance_listen_key()
+
+            keepalive_task = asyncio.create_task(
+                keepalive_binance_loop(listen_key)
             )
-            
 
-            headers = {
-                "X-MBX-APIKEY": BINANCE_API_KEY
-            }
+            websocket_url = f"{BINANCE_WS_BASE_URL}/{listen_key}"
 
-            response = requests.get(
-                url,
-                headers=headers,
-                timeout=10
-            )
+            async with websockets.connect(websocket_url) as ws:
 
-            deposits = response.json()
+                print("✅ Listening Binance User Data Stream")
 
-            print("✅ Binance deposits checked")
+                while True:
 
-            if isinstance(deposits, list) and len(deposits) > 0:
+                    response = await ws.recv()
 
-                latest = deposits[0]
+                    data = json.loads(response)
 
-                txid = latest.get("txId")
-                coin = latest.get("coin")
-                amount = latest.get("amount")
-                network = latest.get("network")
+                    if is_positive_binance_balance_update(data):
 
-                last_txid = get_last_txid()
+                        print("💰 Binance balanceUpdate détecté")
 
-                # initialisation anti doublons
-
-                if not initialized:
-
-                    save_last_txid(txid)
-
-                    initialized = True
-
-                # nouveau depot detecté
-
-                elif txid != last_txid:
-
-                    message = (
-                        f"💸 Dépôt Binance reçu\n"
-                        f"━━━━━━━━━━━━━━━\n"
-                        f"💰 Montant : {amount}\n\n"
-                        f"🪙 Crypto : {coin}\n"
-                        f"🌐 Réseau : {network}\n\n"
-                        f"📥 Fonds crédités sur Binance\n"
-                    )
-
-                    send_telegram(message)
-
-                    save_last_txid(txid)
-
-            # verification toutes les 60 sec
-
-            await asyncio.sleep(60)
+                        await refresh_binance_deposit_after_event()
 
         except Exception as e:
 
-            print("❌ Binance error :", e)
+            print("❌ Binance websocket error :", e)
 
-            await asyncio.sleep(60)
+            await asyncio.sleep(10)
+
+        finally:
+
+            if keepalive_task:
+
+                keepalive_task.cancel()
+
+                try:
+                    await keepalive_task
+                except asyncio.CancelledError:
+                    pass
+
+
+async def binance_fallback_loop():
+
+    print(
+        f"✅ Binance fallback REST toutes les {BINANCE_FALLBACK_INTERVAL}s"
+    )
+
+    while True:
+
+        await asyncio.sleep(BINANCE_FALLBACK_INTERVAL)
+
+        try:
+            process_binance_deposits(baseline_if_empty=True)
+        except Exception as e:
+            print("❌ Binance fallback error :", e)
 
 
 # =========================================================
@@ -313,9 +563,9 @@ async def listen_rise_wallet():
                                 f"📥 Fonds détectés sur le wallet Rise\n"
                             )
 
-                            send_telegram(message)
+                            if send_telegram(message):
 
-                            save_last_rise_txid(tx_hash)
+                                save_last_rise_txid(tx_hash)
 
         except Exception as e:
 
@@ -330,18 +580,28 @@ async def listen_rise_wallet():
 # MAIN
 # =========================================================
 
-async def main():
+async def main(rise_enabled):
 
-    await asyncio.gather(
+    tasks = [
 
         # Binance monitoring
 
-        binance_loop(),
+        listen_binance_wallet(),
+
+        # Binance REST fallback rare
+
+        binance_fallback_loop()
+    ]
+
+    if rise_enabled:
 
         # Rise websocket monitoring
 
-        listen_rise_wallet()
-    )
+        tasks.append(
+            listen_rise_wallet()
+        )
+
+    await asyncio.gather(*tasks)
 
 
 # =========================================================
@@ -363,16 +623,24 @@ def run_flask():
     )
 
 
-# lancement flask dans un thread séparé
+def start_keep_alive():
 
-Thread(
-    target=run_flask,
-    daemon=True
-).start()
+    # lancement flask dans un thread séparé
+
+    Thread(
+        target=run_flask,
+        daemon=True
+    ).start()
 
 
 # =========================================================
 # START SCRIPT
 # =========================================================
 
-asyncio.run(main())
+if __name__ == "__main__":
+
+    rise_enabled = validate_environment()
+
+    start_keep_alive()
+
+    asyncio.run(main(rise_enabled))
