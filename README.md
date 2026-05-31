@@ -114,4 +114,5 @@ Variable optionnelle :
 ```env
 BINANCE_FALLBACK_INTERVAL=900
 BINANCE_WS_API_URL=wss://ws-api.binance.com:443/ws-api/v3?returnRateLimits=false
+BINANCE_NOTIFY_FIRST_DEPOSIT=true
 ```

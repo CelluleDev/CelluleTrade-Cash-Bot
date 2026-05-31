@@ -43,6 +43,9 @@ BINANCE_WS_API_URL = os.getenv(
 BINANCE_FALLBACK_INTERVAL = int(
     os.getenv("BINANCE_FALLBACK_INTERVAL", "900")
 )
+BINANCE_NOTIFY_FIRST_DEPOSIT = (
+    os.getenv("BINANCE_NOTIFY_FIRST_DEPOSIT", "true").lower() == "true"
+)
 
 
 # ---------------------------------------------------------
@@ -308,13 +311,17 @@ def process_binance_deposits(baseline_if_empty=False):
 
     last_txid = get_last_txid()
 
-    if last_txid is None and baseline_if_empty:
+    if last_txid is None and baseline_if_empty and not BINANCE_NOTIFY_FIRST_DEPOSIT:
 
         save_last_txid(txid)
 
         print("✅ Binance baseline enregistrée")
 
         return False
+
+    if last_txid is None:
+
+        print("⚠️ Aucun txId Binance enregistré, notification du dernier dépôt")
 
     if txid == last_txid:
 
