@@ -116,3 +116,25 @@ BINANCE_FALLBACK_INTERVAL=900
 BINANCE_WS_API_URL=wss://ws-api.binance.com:443/ws-api/v3?returnRateLimits=false
 BINANCE_NOTIFY_FIRST_DEPOSIT=true
 ```
+
+### Stockage anti-doublons persistant (Upstash Redis)
+
+Sur Render (free tier), le filesystem est effacé à chaque redémarrage,
+ce qui peut provoquer des notifications en double ou manquées.
+
+Pour l'éviter, le bot peut stocker les derniers `txId` dans
+[Upstash Redis](https://upstash.com) (gratuit, sans expiration).
+
+Variables optionnelles, à définir uniquement sur Render :
+
+```env
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+```
+
+Le bot détecte automatiquement son environnement :
+
+- Si `RENDER` (variable injectée automatiquement par Render) ET les deux variables Upstash sont présentes → stockage Redis
+- Sinon (serveur perso, disque persistant) → stockage dans `last_txid.txt` / `last_rise_txid.txt` comme avant
+
+Aucune action requise lors d'un changement d'hébergeur : pas besoin d'ajouter ou de retirer de variables.

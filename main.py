@@ -139,11 +139,90 @@ LAST_TX_FILE = "last_txid.txt"
 LAST_RISE_TX_FILE = "last_rise_txid.txt"
 
 
+# ---------------------------------------------------------
+# Stockage persistant (Upstash Redis) sur Render
+# ---------------------------------------------------------
+
+# Render efface le filesystem local à chaque redémarrage /
+# redeploy / spin-down. Pour ne pas reperdre last_txid à
+# chaque restart (ce qui provoque des notifications en
+# double), on bascule sur Upstash Redis (REST API) quand le
+# bot tourne sur Render.
+#
+# Sur un serveur perso (disque persistant), la variable
+# RENDER n'existe pas : le bot retombe automatiquement sur
+# les fichiers locaux, sans rien à changer.
+
+UPSTASH_REDIS_REST_URL = os.getenv("UPSTASH_REDIS_REST_URL")
+UPSTASH_REDIS_REST_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN")
+
+USE_REDIS_STORAGE = bool(
+    os.getenv("RENDER")
+    and UPSTASH_REDIS_REST_URL
+    and UPSTASH_REDIS_REST_TOKEN
+)
+
+if USE_REDIS_STORAGE:
+    print("✅ Stockage anti-doublons : Upstash Redis")
+else:
+    print("✅ Stockage anti-doublons : fichiers locaux")
+
+
+def _redis_headers():
+
+    return {
+        "Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"
+    }
+
+
+def _redis_get(key):
+
+    try:
+        response = requests.get(
+            f"{UPSTASH_REDIS_REST_URL}/get/{key}",
+            headers=_redis_headers(),
+            timeout=10
+        )
+
+        response.raise_for_status()
+
+        return response.json().get("result")
+
+    except Exception as e:
+
+        print(f"❌ Upstash get error ({key}) :", e)
+
+        return None
+
+
+def _redis_set(key, value):
+
+    try:
+        response = requests.get(
+            f"{UPSTASH_REDIS_REST_URL}/set/{key}/{value}",
+            headers=_redis_headers(),
+            timeout=10
+        )
+
+        response.raise_for_status()
+
+        return True
+
+    except Exception as e:
+
+        print(f"❌ Upstash set error ({key}) :", e)
+
+        return False
+
+
 # =========================================================
 # BINANCE ANTI DOUBLONS
 # =========================================================
 
 def get_last_txid():
+
+    if USE_REDIS_STORAGE:
+        return _redis_get("celluletrade:last_txid")
 
     if os.path.exists(LAST_TX_FILE):
 
@@ -155,6 +234,10 @@ def get_last_txid():
 
 def save_last_txid(txid):
 
+    if USE_REDIS_STORAGE:
+        _redis_set("celluletrade:last_txid", txid)
+        return
+
     with open(LAST_TX_FILE, "w") as f:
         f.write(txid)
 
@@ -165,6 +248,9 @@ def save_last_txid(txid):
 
 def get_last_rise_txid():
 
+    if USE_REDIS_STORAGE:
+        return _redis_get("celluletrade:last_rise_txid")
+
     if os.path.exists(LAST_RISE_TX_FILE):
 
         with open(LAST_RISE_TX_FILE, "r") as f:
@@ -174,6 +260,10 @@ def get_last_rise_txid():
 
 
 def save_last_rise_txid(txid):
+
+    if USE_REDIS_STORAGE:
+        _redis_set("celluletrade:last_rise_txid", txid)
+        return
 
     with open(LAST_RISE_TX_FILE, "w") as f:
         f.write(txid)
