@@ -23,7 +23,7 @@ from web3 import Web3
 # VARIABLES D'ENVIRONNEMENT
 # =========================================================
 
-# recuperation des cles api sur le serveur à ne pas mettre ici 
+# recuperation des cles api sur le serveur à ne pas mettre ici
 
 
 # ---------------------------------------------------------
@@ -49,7 +49,7 @@ BINANCE_NOTIFY_FIRST_DEPOSIT = (
 
 
 # ---------------------------------------------------------
-# Wallet Rise / Websocket Alchemy Arbitrum / 
+# Wallet Rise / Websocket Alchemy Arbitrum /
 # ---------------------------------------------------------
 
 ALCHEMY_WS_URL = os.getenv("ALCHEMY_WS_URL")
@@ -59,7 +59,7 @@ ALCHEMY_WS_URL = os.getenv("ALCHEMY_WS_URL")
 # WALLET RISE A SURVEILLER
 # =========================================================
 
-# mettre wallet dans .env du serveur 
+# mettre wallet dans .env du serveur
 
 RISE_WALLET = os.getenv("RISE_WALLET")
 
@@ -187,7 +187,7 @@ def send_telegram(message):
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
-    
+
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": message,
@@ -606,6 +606,122 @@ app = Flask(__name__)
 @app.route('/')
 def home():
     return "CelluleTrade Bot Running"
+
+
+# ---------------------------------------------------------
+# Panel de test Telegram (Binance / Rise)
+# ---------------------------------------------------------
+
+TEST_PANEL_HTML = """
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>CelluleTrade Bot - Test Telegram</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #0f1115;
+            color: #eee;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        h1 { margin-bottom: 30px; font-size: 20px; }
+        .buttons { display: flex; gap: 16px; }
+        button {
+            padding: 15px 30px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .binance { background: #f0b90b; color: #000; }
+        .rise { background: #3b82f6; color: #fff; }
+        button:disabled { opacity: 0.6; cursor: default; }
+        #result {
+            margin-top: 24px;
+            font-size: 14px;
+            white-space: pre-wrap;
+            max-width: 420px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test notifications Telegram</h1>
+    <div class="buttons">
+        <button class="binance" onclick="testNotif('binance', this)">Tester Binance</button>
+        <button class="rise" onclick="testNotif('rise', this)">Tester Rise</button>
+    </div>
+    <div id="result"></div>
+
+    <script>
+        async function testNotif(type, btn) {
+            const result = document.getElementById('result');
+            btn.disabled = true;
+            result.innerText = "Envoi en cours...";
+
+            try {
+                const res = await fetch('/test/' + type, { method: 'POST' });
+                const data = await res.json();
+
+                result.innerText = data.ok
+                    ? "✅ Message de test " + type + " envoyé sur Telegram"
+                    : "❌ Échec : " + JSON.stringify(data);
+            } catch (e) {
+                result.innerText = "❌ Erreur : " + e;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
+"""
+
+
+@app.route('/test')
+def test_panel():
+    return TEST_PANEL_HTML
+
+
+@app.route('/test/binance', methods=['POST'])
+def test_binance_notification():
+
+    message = (
+        f"💸 Dépôt Binance reçu (TEST)\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"💰 Montant : 100\n\n"
+        f"🪙 Crypto : USDT\n"
+        f"🌐 Réseau : TEST\n\n"
+        f"📥 Ceci est un message de test Binance (panel /test)\n"
+    )
+
+    ok = send_telegram(message)
+
+    return {"ok": ok}
+
+
+@app.route('/test/rise', methods=['POST'])
+def test_rise_notification():
+
+    message = (
+        f"💸 Dépôt Rise reçu (TEST)\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"🔗 TX Hash : 0xTEST000000000000000000000000000000000000\n\n"
+        f"🌐 Réseau : Arbitrum (TEST)\n"
+        f"📦 Block : 0\n\n"
+        f"📥 Ceci est un message de test Rise (panel /test)\n"
+    )
+
+    ok = send_telegram(message)
+
+    return {"ok": ok}
 
 
 def run_flask():
