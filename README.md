@@ -2,6 +2,8 @@
 
 # 📡 Binance & Rise Telegram Monitoring Bot
 
+🧪 [Panel de test Telegram](https://celluletrade-cash-bot.onrender.com/test) — boutons pour tester les notifications Binance et Rise.
+
 Bot Python de monitoring crypto en temps réel.
 
 Le script surveille automatiquement :
