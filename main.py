@@ -761,8 +761,8 @@ TEST_PANEL_HTML = """
                 const data = await res.json();
 
                 result.innerText = data.ok
-                    ? "✅ Message de test " + type + " envoyé sur Telegram"
-                    : "❌ Échec : " + JSON.stringify(data);
+                    ? "✅ " + type + " : " + (data.detail || "test envoyé sur Telegram")
+                    : "❌ Échec : " + (data.error || JSON.stringify(data));
             } catch (e) {
                 result.innerText = "❌ Erreur : " + e;
             } finally {
@@ -783,35 +783,142 @@ def test_panel():
 @app.route('/test/binance', methods=['POST'])
 def test_binance_notification():
 
+    # Test réel : interroge l'API Binance (lecture seule,
+    # ne touche pas à last_txid donc n'affecte pas la
+    # detection anti-doublon en cours)
+
+    try:
+        deposits = get_binance_deposits()
+    except Exception as e:
+
+        send_telegram(f"❌ Test Binance : erreur API Binance ({e})")
+
+        return {"ok": False, "error": str(e)}
+
+    if not isinstance(deposits, list) or len(deposits) == 0:
+
+        message = (
+            f"🧪 Test Binance (réel)\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"✅ Connexion API Binance OK\n"
+            f"📭 Aucun dépôt trouvé sur le compte\n"
+        )
+
+        ok = send_telegram(message)
+
+        return {"ok": ok, "detail": "Connexion OK, aucun dépôt trouvé"}
+
+    latest = max(
+        deposits,
+        key=lambda deposit: deposit.get("insertTime", 0)
+    )
+
     message = (
-        f"💸 Dépôt Binance reçu (TEST)\n"
+        f"🧪 Test Binance (réel)\n"
         f"━━━━━━━━━━━━━━━\n"
-        f"💰 Montant : 100\n\n"
-        f"🪙 Crypto : USDT\n"
-        f"🌐 Réseau : TEST\n\n"
-        f"📥 Ceci est un message de test Binance (panel /test)\n"
+        f"✅ Connexion API Binance OK\n"
+        f"💰 Dernier dépôt : {latest.get('amount')} {latest.get('coin')}\n"
+        f"🌐 Réseau : {latest.get('network')}\n"
+        f"🔗 TxID : {latest.get('txId')}\n\n"
+        f"ℹ️ Lecture seule, n'affecte pas la détection anti-doublon\n"
     )
 
     ok = send_telegram(message)
 
-    return {"ok": ok}
+    return {
+        "ok": ok,
+        "detail": (
+            f"Dernier dépôt trouvé : "
+            f"{latest.get('amount')} {latest.get('coin')} "
+            f"({latest.get('network')})"
+        )
+    }
 
 
 @app.route('/test/rise', methods=['POST'])
 def test_rise_notification():
 
+    # Test réel : interroge l'API Alchemy (lecture seule,
+    # ne touche pas à last_rise_txid donc n'affecte pas la
+    # detection anti-doublon en cours)
+
+    if not ALCHEMY_WS_URL or not RISE_WALLET:
+
+        send_telegram(
+            "❌ Test Rise : ALCHEMY_WS_URL ou RISE_WALLET manquant"
+        )
+
+        return {"ok": False, "error": "Variables Rise manquantes"}
+
+    alchemy_http_url = (
+        ALCHEMY_WS_URL
+        .replace("wss://", "https://")
+        .replace("ws://", "http://")
+    )
+
+    try:
+        response = requests.post(
+            alchemy_http_url,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "alchemy_getAssetTransfers",
+                "params": [{
+                    "toAddress": RISE_WALLET,
+                    "category": ["external", "erc20"],
+                    "order": "desc",
+                    "maxCount": "0x1",
+                    "withMetadata": True
+                }]
+            },
+            timeout=10
+        )
+
+        response.raise_for_status()
+
+        result = response.json()
+
+    except Exception as e:
+
+        send_telegram(f"❌ Test Rise : erreur API Alchemy ({e})")
+
+        return {"ok": False, "error": str(e)}
+
+    transfers = result.get("result", {}).get("transfers", [])
+
+    if not transfers:
+
+        message = (
+            f"🧪 Test Rise (réel)\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"✅ Connexion API Alchemy OK\n"
+            f"📭 Aucune transaction entrante trouvée sur le wallet\n"
+        )
+
+        ok = send_telegram(message)
+
+        return {"ok": ok, "detail": "Connexion OK, aucune tx trouvée"}
+
+    latest = transfers[0]
+
     message = (
-        f"💸 Dépôt Rise reçu (TEST)\n"
+        f"🧪 Test Rise (réel)\n"
         f"━━━━━━━━━━━━━━━\n"
-        f"🔗 TX Hash : 0xTEST000000000000000000000000000000000000\n\n"
-        f"🌐 Réseau : Arbitrum (TEST)\n"
-        f"📦 Block : 0\n\n"
-        f"📥 Ceci est un message de test Rise (panel /test)\n"
+        f"✅ Connexion API Alchemy OK\n"
+        f"💰 Dernière tx reçue : {latest.get('value')} {latest.get('asset')}\n"
+        f"🔗 TX Hash : {latest.get('hash')}\n\n"
+        f"ℹ️ Lecture seule, n'affecte pas la détection anti-doublon\n"
     )
 
     ok = send_telegram(message)
 
-    return {"ok": ok}
+    return {
+        "ok": ok,
+        "detail": (
+            f"Dernière tx reçue : "
+            f"{latest.get('value')} {latest.get('asset')}"
+        )
+    }
 
 
 def run_flask():
