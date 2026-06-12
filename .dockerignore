@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+*.db
+.env
+.git/
+*.md
+last_txid.txt
+last_rise_txid.txt

@@ -1,0 +1,39 @@
+# Self-host CelluleTrade (celluletrade_cash_saas) : bot Telegram + base Postgres.
+#
+# Démarrage :
+#   1. Copier celluletrade_cash_saas/.env.example vers .env (à la racine du projet)
+#      et compléter les valeurs (TELEGRAM_BOT_TOKEN, ENCRYPTION_KEY, etc.)
+#   2. Définir POSTGRES_PASSWORD dans ce même .env
+#   3. docker compose up -d --build
+#
+# Le bot tourne en long polling : aucun port exposé, aucun nom de domaine requis.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: celluletrade
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: celluletrade
+    volumes:
+      - celluletrade_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U celluletrade"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  bot:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://celluletrade:${POSTGRES_PASSWORD}@db:5432/celluletrade
+
+volumes:
+  celluletrade_pgdata:

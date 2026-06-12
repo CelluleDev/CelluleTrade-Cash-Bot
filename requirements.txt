@@ -1,0 +1,12 @@
+web3
+websockets
+requests
+flask
+
+# --- CelluleTrade SaaS (celluletrade_cash_saas/) ---
+python-telegram-bot[job-queue]>=20.7
+sqlalchemy>=2.0
+psycopg2-binary
+cryptography
+stripe
+python-dotenv
